@@ -59,6 +59,14 @@ public class SummaryRepay {
                 .property("zookeeper.connect", properties.getProperty("zookeeper.connect"))
                 .sinkPartitionerFixed();
 
+        Kafka kafka_new_mt_loan_billing_detail = new Kafka().version("universal")
+                .topic("dwb_qydnewproduction_mt_loan_billing_detail")
+                .startFromEarliest()
+                .property("bootstrap.servers", properties.getProperty("bootstrap.servers"))
+                .property("group.id", "new_mt_loan_billing_detail")
+                .property("zookeeper.connect", properties.getProperty("zookeeper.connect"))
+                .sinkPartitionerFixed();
+
         //标的表数据
         String[] mt_loan_field =  new String[]{"id","amount","match_amount","price","interest_rate","sponsor_fee","service_fee","third_service_fee","third_user_id","debt_type","audit_type","debit_term","tender_name","status","open_time","close_time","borrower","repay_date","actual_repay_time","project_number","file_number","entrust_user_id","remark","reply","transaction_id","auth_status","create_time","update_time","version","logical_del","product_type"};
         TypeInformation[] mt_loan_array = new TypeInformation[mt_loan_field.length];
