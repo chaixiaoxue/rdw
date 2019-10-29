@@ -29,9 +29,9 @@ public class SumNginxByFilter {
 
         Properties properties = Configs.getProperties();
         Properties kafkaPro = Configs.getProperties();
-        kafkaPro.setProperty("bootstrap.servers",properties.getProperty("bootstrap.servers"));
-        kafkaPro.setProperty("zookeeper.connect",properties.getProperty("zookeeper.connect"));
-        kafkaPro.setProperty("group.id","nginx_request_9");
+        kafkaPro.setProperty("bootstrap.servers","172.16.71.153:9092,172.16.71.148:9092,172.16.71.96:9092");
+        kafkaPro.setProperty("zookeeper.connect","172.16.71.93:2181,172.16.71.148:2181,172.16.71.95:2181,172.16.71.96:2181,172.16.71.153:2181");
+        kafkaPro.setProperty("group.id","nginx_request_10");
         kafkaPro.setProperty("auto.offset.reset","earliest");
 
         DataStream<String> dataStream = environment.addSource(new FlinkKafkaConsumer<>("nginx_request", new SimpleStringSchema(), kafkaPro));
@@ -44,30 +44,8 @@ public class SumNginxByFilter {
                 System.out.println("sum"+sum);
                 return value;
             }
-        }).filter(new FilterFunction<String>() {
-            @Override
-            public boolean filter(String value) throws Exception {
-                JSONObject jsonObject = JSON.parseObject(value);
-                String message = jsonObject.getString("message");
-                int length = message.length();
-
-                String substring = message.substring(length - 6, length - 1);
-                if (Double.parseDouble(substring) > 1) {
-                    return false;
-                }
-                return true;
-            }
         });
-
-        DataStream<Long> map = message.map(new MapFunction<String, Long>() {
-            Long count = 0L;
-            @Override
-            public Long map(String value) {
-                count++;
-                return count;
-            }
-        });
-        map.print();
+        message.print();
         environment.execute();
     }
 
