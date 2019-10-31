@@ -29,8 +29,8 @@ public class SumNginxByFilter {
 
         Properties properties = Configs.getProperties();
         Properties kafkaPro = Configs.getProperties();
-        kafkaPro.setProperty("bootstrap.servers","172.16.71.153:9092,172.16.71.148:9092,172.16.71.96:9092");
-        kafkaPro.setProperty("zookeeper.connect","172.16.71.93:2181,172.16.71.148:2181,172.16.71.95:2181,172.16.71.96:2181,172.16.71.153:2181");
+        kafkaPro.setProperty("bootstrap.servers",properties.getProperty("bootstrap.servers"));
+        kafkaPro.setProperty("zookeeper.connect",properties.getProperty("zookeeper.connect"));
         kafkaPro.setProperty("group.id","nginx_request_10");
         kafkaPro.setProperty("auto.offset.reset","earliest");
 
