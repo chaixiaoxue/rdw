@@ -1,22 +1,27 @@
 package net.kaiyuan.kyflink.detail;
 
+import com.alibaba.fastjson.JSONObject;
 import net.kaiyuan.kyflink.utils.Configs;
+import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
+import org.apache.flink.streaming.connectors.kafka.KafkaSerializationSchema;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.java.StreamTableEnvironment;
 import org.apache.flink.table.descriptors.Json;
 import org.apache.flink.table.descriptors.Kafka;
 import org.apache.flink.table.descriptors.Schema;
-import org.apache.flink.table.sinks.CsvTableSink;
 import org.apache.flink.types.Row;
+import org.apache.kafka.clients.producer.ProducerRecord;
 
-import java.util.ArrayList;
-import java.util.List;
+import javax.annotation.Nullable;
 import java.util.Properties;
 
 
@@ -29,17 +34,21 @@ public class SummaryRepay {
     public static void main(String[] args) throws   Exception{
         StreamExecutionEnvironment environment = StreamExecutionEnvironment.getExecutionEnvironment();
         environment.setParallelism(1);
-        //environment.enableCheckpointing(5000);
+        environment.enableCheckpointing(5000);
         EnvironmentSettings settings = EnvironmentSettings.newInstance().useBlinkPlanner().inStreamingMode().build();
         StreamTableEnvironment streamTableEnvironment = StreamTableEnvironment.create(environment,settings);
-
         Properties properties = Configs.getProperties();
-
+        String bootstrap = properties.getProperty("bootstrap.servers");
+        String zookeeper = properties.getProperty("zookeeper.connect");
+        Properties prop = new Properties();
+        prop.setProperty("bootstrap.servers", bootstrap);
+        prop.setProperty("zookeeper.connect", zookeeper);
+        prop.setProperty("transaction.max.timeout.ms","50000");
         Kafka kafka_mt_loan = new Kafka().version("universal")
                 .topic("dwb_qydproduction_mt_loan")
                 .startFromLatest()
                 .property("bootstrap.servers", properties.getProperty("bootstrap.servers"))
-                .property("group.id", "mt_loan")
+                .property("group.id", "mt_loan_1")
                 .property("zookeeper.connect", properties.getProperty("zookeeper.connect"))
                 .sinkPartitionerFixed();
 
@@ -68,7 +77,7 @@ public class SummaryRepay {
                 .sinkPartitionerFixed();
 
         //标的表数据
-        String[] mt_loan_field =  new String[]{"id","amount","match_amount","price","interest_rate","sponsor_fee","service_fee","third_service_fee","third_user_id","debt_type","audit_type","debit_term","tender_name","status","open_time","close_time","borrower","repay_date","actual_repay_time","project_number","file_number","entrust_user_id","remark","reply","transaction_id","auth_status","create_time","update_time","version","logical_del","product_type"};
+        String[] mt_loan_field =  new String[]{"id","_ums_id_","rowkey","amount","match_amount","price","interest_rate","sponsor_fee","service_fee","third_service_fee","third_user_id","debt_type","audit_type","debit_term","tender_name","status","open_time","close_time","borrower","repay_date","actual_repay_time","project_number","file_number","entrust_user_id","remark","reply","transaction_id","auth_status","create_time","update_time","version","logical_del","product_type"};
         TypeInformation[] mt_loan_array = new TypeInformation[mt_loan_field.length];
         for(int i=0;i<mt_loan_field.length;i++){
             mt_loan_array[i]= Types.ROW_NAMED(
@@ -142,10 +151,28 @@ public class SummaryRepay {
                 .inAppendMode()
                 .registerTableSource("dwb_qydproduction_mt_loan_billing_detail");
 
-        String sql4 = "select mtl.dbName,mtl.id,mtl.fields.id.nowValue as loanId, mtlb.fields.protocol_no.nowValue nowprotocol_no  from dwb_qydproduction_mt_loan mtl left join dwb_qydproduction_mt_loan_billing mtlb on mtl.fields.id.nowValue = mtlb.fields.loan_id.nowValue ";
+        //String sql4 = "select id,0 as nowAmount,CAST(if(amount.beforeValue='' or amount.beforeValue is null ,0,CAST (amount.beforeValue AS DECIMAL))  AS DECIMAL) as beforeAmount,borrower.nowValue as borrower from dwb_qydproduction_mt_loan where status.beforeValue in ('PREPAYMENT_FINISH','FINISH') ";
+        String sql4 = "select t.row_key,t.ums_id,t.id,sum(t.nowAmount)-sum(t.beforeAmount) as amount,t.borrower from (select rowkey.nowValue as row_key,_ums_id_.nowValue as ums_id,id,CAST(if(amount.nowValue='' or amount.nowValue is null ,0,CAST (amount.nowValue AS DECIMAL)) AS DECIMAL) as nowAmount,0 as beforeAmount,borrower.nowValue as borrower from dwb_qydproduction_mt_loan where status.nowValue in ('PREPAYMENT_FINISH','FINISH')" +
+                " union all  " +
+                "select rowkey.nowValue as row_key,_ums_id_.nowValue as ums_id,id,0 as nowAmount,CAST(if(amount.beforeValue='' or amount.beforeValue is null ,0,CAST (amount.beforeValue AS DECIMAL))  AS DECIMAL) as beforeAmount,borrower.nowValue as borrower from dwb_qydproduction_mt_loan where status.beforeValue in ('PREPAYMENT_FINISH','FINISH')) t group by t.row_key,t.ums_id,t.id,t.borrower ";
+
         Table table4 = streamTableEnvironment.sqlQuery(sql4);
         DataStream<Tuple2<Boolean, Row>> tuple2DataStream = streamTableEnvironment.toRetractStream(table4, Row.class);
-        tuple2DataStream.print();
+        //tuple2DataStream.print();
+        SingleOutputStreamOperator<String> map = tuple2DataStream.map(new MapFunction<Tuple2<Boolean, Row>, String>() {
+            @Override
+            public String map(Tuple2<Boolean, Row> booleanRowTuple2) throws Exception {
+                JSONObject result = new JSONObject();
+                result.put("row_key",booleanRowTuple2.f1.getField(0));
+                result.put("ums_id",booleanRowTuple2.f1.getField(1));
+                result.put("loan_id",booleanRowTuple2.f1.getField(2));
+                result.put("amount",booleanRowTuple2.f1.getField(3));
+                result.put("user_id",booleanRowTuple2.f1.getField(4));
+                return result.toJSONString();
+            }
+        });
+       // map.print();
+        map.addSink(new FlinkKafkaProducer<String>("dwd_repayment", new SimpleStringSchema(),prop)).name("dwd_repayment").setParallelism(2);
         environment.execute("Flink Table Json Engine");
     }
 }

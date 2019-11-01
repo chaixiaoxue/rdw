@@ -67,7 +67,8 @@ public class kafkaTableSqlit {
                             Map<String, Object> fieldsMap = new HashMap<>();
                             JSONArray tuple = payload.getJSONObject(i).getJSONArray("tuple");
                             JSONObject beforeUpdated_sub=null;
-                            if(tuple.get(2).equals("u")){
+                            String type = tuple.getString(2);
+                            if(type.equals("u")){
                                 beforeUpdated_sub = beforeUpdated.getJSONObject(i);
                             }
                             for (int j = 0; j < fields.size(); j++) {
@@ -76,6 +77,10 @@ public class kafkaTableSqlit {
                                 if (name.equals("id")) {
                                     changeUms.put("id", tuple.getString(j));
                                 }
+                                //这条语句是更新还是插入或者删除
+                                if (name.equals("_ums_op_")) {
+                                    changeUms.put("_ums_op_", tuple.getString(j));
+                                }
                                 Map<String, Object> fliedMap = new HashMap();
                                 fliedMap.put("nowValue", tuple.getString(j));
                                 fliedMap.put("type", jb.getString("type"));
@@ -83,7 +88,12 @@ public class kafkaTableSqlit {
                                 if (beforeUpdated_sub != null && beforeUpdated_sub.containsKey(name)) {
                                     fliedMap.put("beforeValue", beforeUpdated_sub.getString(name));
                                 } else {
-                                    fliedMap.put("beforeValue","");
+                                    if(type.equals("i")){
+
+                                        fliedMap.put("beforeValue","");
+                                    }else {
+                                        fliedMap.put("beforeValue",tuple.getString(j));
+                                    }
                                 }
                                 fieldsMap.put(name, fliedMap);
                             }
@@ -142,9 +152,9 @@ public class kafkaTableSqlit {
                 if (line.containsKey("tableName")){
                     //TODO:读取服务配置 然后将需要的添加到topic里面,或者读取redis
                     String tableName = line.getString("tableName");
-                    if (tableName.equals("mt_loan_billing") || tableName.equals("mt_loan_billing_detail") || tableName.equals("mt_loan")){
+                    if (tableName.equals("mt_loan_billing") || tableName.equals("mt_loan_billing_detail") || tableName.equals("mt_loan") || tableName.equals("repay_billing")){
                         System.out.println(tableName);
-                        return "dwb_"+line.getString("databaseName")+"_"+line.getString("tableName");
+                        return "dwb_"+line.getString("dbName")+"_"+line.getString("tableName");
                     }
                 }
                 return "dwb_default_topic";
